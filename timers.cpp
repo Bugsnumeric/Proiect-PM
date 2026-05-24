@@ -7,7 +7,9 @@
 
 /* Allocates the system ticks counter (milliseconds since boot). */
 volatile uint32_t systicks = 0;
-
+volatile uint8_t pwmCounter = 0;
+volatile uint8_t motorDuty = 0;
+volatile uint8_t tickDivider = 0;
 /* ======================================== Timer0 ======================================== */
 
 /* Initialize Timer0 for Fast PWM mode (8 bits). */
@@ -80,23 +82,30 @@ void Timer1_init_systicks(void)
     TIMSK1 |= (1 << OCIE1A); 
 
     /* 12MHz / 8 => 1500 kHz */
-    OCR1A = 1500;
+    OCR1A = 100;
 
     /* TODO Task 2: don't forget something */
     //TIMSK1 |= (1 << OCIE1B);
 
 }
 
+// preluat din lab, schimbat pentru proiect (motor)
 ISR(TIMER1_COMPA_vect)
 {
-    /* Will get called [almost] once every 1ms! */
-    systicks++;
-    /* Note: the timer is in Clear Timer on Compare Match mode, so it will
-     * automatically reset itself back to 0! */
+    pwmCounter++;
 
-    /* TODO Task 2: manual PWM */
-    PORTD &= ~(1 << PD5);
+    if (pwmCounter < motorDuty)
+        PORTB |= (1 << PB2);
+    else
+        PORTB &= ~(1 << PB2);
 
+    tickDivider++;
+
+    if (tickDivider >= 15)
+    {
+        tickDivider = 0;
+        systicks++;
+    }
 }
 
 ISR(TIMER1_COMPB_vect)

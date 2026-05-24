@@ -8,7 +8,8 @@
  * for use within other .c modules.
  */
 extern volatile uint32_t systicks;
-
+extern volatile uint8_t pwmCounter;
+extern volatile uint8_t motorDuty;
 /* 
  * Useful macro to check whether a specific amount of time
  * passed since some given last event.
