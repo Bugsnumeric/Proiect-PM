@@ -1,6 +1,6 @@
-## Proiect PM
+# Proiect PM
 
-# Sistem automat de sortare
+## Sistem automat de sortare
 
 In cadrul proiectul am realizat o banda rulanta care este miscata prin PWM (manual) de un motor (12V, primeste 10V din cauza l209n);
 
@@ -9,7 +9,7 @@ iar la detectia de RED || GREEN va trimite un semnal catre SG90 (servomotor) pen
 
 Componentele sunt cele de aici: https://ocw.cs.pub.ro/courses/pm/prj2026/florin.stancu/petru.radulescu?&#lista_de_piese.
 
-# HARDWARE
+## HARDWARE
 
 PWM motor:
 Am un counter si un duty care pe baza acestora imi verifica daca motorul este ON sau OFF;
@@ -25,7 +25,7 @@ Acest driver (cf. datasheet) mananca 2V, asadar ajung ~10V la motor.
 
 Are rolul de a opera motorul (motoarele) prin porturile ENA / ENB si schimba directia in care se invarte motorul (invart motoarele).
 
-# SOFTWARE
+## SOFTWARE
 
 ReadColor() determina ce culoare sa citeasca senzorul (este un filtru), se stabilizeaza si masoara semnalul de iesire, asa decid ce culoare a citit senzorul;
 
