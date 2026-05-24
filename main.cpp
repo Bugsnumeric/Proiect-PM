@@ -2,51 +2,57 @@
 #include <usart.h>
 #include <timers.h>
 
-#define SERVO_PIN 11
+#define SERVO_PIN PB3
 
 // senzor
-#define S0 4
-#define S1 5
-#define S2 6
-#define S3 7
-#define OUT_PIN 2
-#define LED_PIN 13
-#define LED_CTRL 3
+#define S0 PD4
+#define S1 PD5
+#define S2 PD6
+#define S3 PD7
+#define OUT_PIN_TCS PD2
+#define LED_CTRL_TCS PD3
 
 // usart
 #define CLOCK_SPEED 12000000
 #define BAUD 38400
 #define MYUBRR CLOCK_SPEED/16/BAUD-1
 
-// motor
-#define IN1 8   // PB0
-#define IN2 9   // PB1
-#define ENA 10  // PB2
+// motor driver
+#define IN1 PB0
+#define IN2 PB1
+#define ENA PB2
 
 // timer
 bool motorRunning = false;
 uint32_t motorTime = 0;
 
-// buton
+// buton MCU + LED
+#define LED_PIN_MCU PB5
+#define BUTTON_MCU PB7
 bool sensorEnabled = true;
 
 // Citeste frecventa pentru o anumita culoare
 unsigned long readColor(bool s2, bool s3)
 {
-    digitalWrite(S2, s2);
-    digitalWrite(S3, s3);
+    if (s2)
+        PORTD |= (1 << S2);
+    else
+        PORTD &= ~(1 << S2);
+
+    if (s3)
+        PORTD |= (1 << S3);
+    else
+        PORTD &= ~(1 << S3);
 
     delay(50);
 
-    // masoara durata impulsului LOW
-    cli();
-    unsigned long duration = pulseIn(OUT_PIN, LOW, 50000UL);
-    sei();
+    // masoara durata impulsului
+    unsigned long duration = pulseIn(OUT_PIN_TCS, LOW, 50000UL);
 
     if (duration == 0)
         return 0;
 
-    // convertim perioada in frecventa
+    // conversie perioada in frecventa
     return 1000000UL / duration;
 }
 
@@ -54,70 +60,90 @@ void servoWriteAngle(int angle)
 {
     int pulseWidth = map(angle, 0, 180, 1000, 2000);
 
-    digitalWrite(SERVO_PIN, HIGH);
+    // HIGH
+    PORTB |= (1 << SERVO_PIN);
     delayMicroseconds(pulseWidth);
-    digitalWrite(SERVO_PIN, LOW);
+    // LOW
+    PORTB &= ~(1 << SERVO_PIN);
 }
 
 void motorStart()
 {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, HIGH);
-    analogWrite(ENA, 200);
+    // backward HIGH + LOW
+    PORTB |= (1 << IN1);
+    PORTB &= ~(1 << IN2);
+    // speed
+    motorDuty = 255;
 }
 
 void motorStop()
 {
-    analogWrite(ENA, 0);
+    motorDuty = 0;
+    PORTB &= ~(1 << ENA);
 }
 
 void setup()
 {
+    // motor driver
+    DDRB |= (1 << IN1);
+    DDRB |= (1 << IN2);
+    DDRB |= (1 << ENA);
+
+    // timer manual
     Timer1_init_systicks();
     sei();
-    pinMode(SERVO_PIN, OUTPUT);
-    servoWriteAngle(0);
+
+    // sg90
+    DDRB |= (1 << SERVO_PIN);
+    servoWriteAngle(180);
+
     USART0_init(MYUBRR);
     Serial.begin(9600);
-    pinMode(LED_CTRL, OUTPUT);
 
-    pinMode(IN1, OUTPUT);
-    pinMode(IN2, OUTPUT);
-    pinMode(ENA, OUTPUT);
+    // senzor
+    DDRD |= (1 << LED_CTRL_TCS);
+    DDRD |= (1 << S0);
+    DDRD |= (1 << S1);
+    DDRD |= (1 << S2);
+    DDRD |= (1 << S3);
+    DDRD &= ~(1 << OUT_PIN_TCS);
 
-    pinMode(S0, OUTPUT);
-    pinMode(S1, OUTPUT);
-    pinMode(S2, OUTPUT);
-    pinMode(S3, OUTPUT);
+    // led mcu
+    DDRB |= (1 << LED_PIN_MCU);
 
-    pinMode(OUT_PIN, INPUT);
+    // init sg90
+    PORTB &= ~(1 << SERVO_PIN);
 
-    pinMode(LED_PIN, OUTPUT);
+    // Scalare frecventa
+    PORTD |= (1 << S0);
+    PORTD &= ~(1 << S1);
 
-    // Scalare frecventa 20%
-    digitalWrite(S0, HIGH);
-    digitalWrite(S1, LOW);
-    digitalWrite(LED_CTRL, HIGH);
-
-    USART0_print("TCS3200 & MOTOR START\r\n");
+    PORTD |= (1 << PD3);
+    USART0_print("START\r\n");
 }
 
 void loop()
 {
     // ================= SENZOR =================
-    unsigned long red = readColor(LOW, LOW);
-    unsigned long blue = readColor(LOW, HIGH);
-    unsigned long green = readColor(HIGH, HIGH);
-    bool isBlue = (blue > red && blue > green);
-    bool isGreen = (green > red && green > blue);
+    unsigned long red = 0;
+    unsigned long blue = 0;
+    unsigned long green = 0;
 
-    // DEBUG
-    char buff[64];
-    snprintf(buff, sizeof(buff),
-    "RAW R:%lu G:%lu B:%lu\r\n",
-    red, green, blue);
-    USART0_print(buff);
+    if (sensorEnabled) {
+        red = readColor(LOW, LOW);
+        blue = readColor(LOW, HIGH);
+        green = readColor(HIGH, HIGH);
 
+        char buff[64];
+        snprintf(buff, sizeof(buff), "R:%lu G:%lu B:%lu\r\n", red, green, blue);
+        USART0_print(buff);
+    }
+
+    bool isBlue = (blue > red + 1000 && blue > green + 1000);
+    bool isGreen = (green > red + 1000 && green > blue + 1000);
+    bool isRed = (red > green + 1000 && red > blue + 1000);
+
+    int servoAngle = 0;
     // ================= BLUE =================
     if (isBlue && sensorEnabled)
     {
@@ -130,12 +156,15 @@ void loop()
             motorStart();
             USART0_print("BLUE -> MOTOR START\r\n");
         }
-        servoWriteAngle(0);
+        servoAngle = 180;
     }
-    else
+    else if (isGreen || isRed)
     {
-        servoWriteAngle(90);
+        servoAngle = 0;
+    } else {
+        servoAngle = 180;
     }
+    servoWriteAngle(servoAngle);
     
     // ================= TIMER STOP (5s) =================
     if (motorRunning && SYSTICKS_PASSED(motorTime, 5000))
@@ -144,13 +173,14 @@ void loop()
         motorRunning = false;
         sensorEnabled = true;
         motorStop();
-        digitalWrite(LED_CTRL, HIGH);
+        PORTD |= (1 << LED_CTRL_TCS);
     }
 
     // ================= BUTTON =================
-    if (!(PINB & (1 << PB7)))
+    if (!(PINB & (1 << BUTTON_MCU)))
     {
         sensorEnabled = !sensorEnabled;
+        PORTD ^= (1 << LED_CTRL_TCS);
         USART0_print(sensorEnabled ? "SENSOR ON\r\n" : "SENSOR OFF\r\n");
         _delay_ms(300);
     }
@@ -158,6 +188,6 @@ void loop()
     // ================= SENZOR OFF =================
     if (!sensorEnabled)
     {
-        digitalWrite(LED_CTRL, LOW);
+        PORTD &= ~(1 << LED_CTRL_TCS);
     }
 }
